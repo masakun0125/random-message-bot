@@ -2,7 +2,9 @@
 
 登録したメッセージの中から、指定した時間にランダムなものを送信するbot。設定はSlashCommandでできます。
 
-**設定手順!!**
+##設定手順
+
+###Botの招待
 1.[Discord Developer Portal](https://discord.com/developers/home)にアクセスし、ログインをする。
 2.「New Application」をクリックして、適当な名前（例: TimerBot）などを入力して作成をする。
 3.左メニューの「Bot」を選択し、「Reset Token」をクリックして表示された文字列(BotToken）をコピーして手元にメモをする。メモを忘れるとめんどいことになるからしっかりとメモをしておこう!
@@ -13,4 +15,4 @@
 6-2.「BOT PERMISSIONS(Botの権限って書いてあるかも)」の欄にある`Send Messages`と`Embed Links`にチェックを入れる。
 7.一番下に生成された URLをコピーしてブラウザで開き、Botを自分のDiscordサーバーに招待する!
 
-## これでBotの作成は完了!
+### これでBotの作成は完了!
