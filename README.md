@@ -1,2 +1,4 @@
-# random-message-bot
-指定した時間に登録した中からランダムなメッセージを送信するbot
+# Random-Message-Bot
+
+登録したメッセージの中から、指定した時間にランダムなものを送信するbot。設定はSlashCommandでできます。
+
