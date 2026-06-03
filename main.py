@@ -1,34 +1,55 @@
-import json
 import os
 import random
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 import discord
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from discord import app_commands
 from discord.ext import commands
+from supabase import create_client, Client
 
-TOKEN = "YOUR_BOT_TOKEN_HERE"  
-CHANNEL_ID = 123456789012345678 
-DATA_FILE = "bot_config.json"  
+TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
 
-DEFAULT_DATA = {"time": "08:00", "messages": ["初期メッセージ1", "初期メッセージ2"]}
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+def load_time():
+    response = supabase.table("bot_config").select("target_time").eq("id", "default").execute()
+    if response.data:
+        return response.data[0]["target_time"]
+    return "08:00"
 
-def load_data():
-    """設定ファイルを読み込む"""
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return DEFAULT_DATA.copy()
+def save_time(time_str):
+    supabase.table("bot_config").update({"target_time": time_str}).eq("id", "default").execute()
 
+def load_messages():
+    response = supabase.table("bot_messages").select("id", "message_text").execute()
+    return response.data
 
-def save_data(data):
-    """設定ファイルを保存する"""
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+def add_message_to_db(text):
+    supabase.table("bot_messages").insert({"message_text": text}).execute()
 
+def delete_message_from_db(msg_id):
+    supabase.table("bot_messages").delete().eq("id", msg_id).execute()
+
+class WebServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"Bot is running!")
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+
+def run_web_server():
+    server = HTTPServer(("0.0.0.0", 8080), WebServer)
+    server.serve_forever()
 
 class MyBot(commands.Bot):
-
     def __init__(self):
         intents = discord.Intents.default()
         super().__init__(command_prefix="!", intents=intents)
@@ -44,83 +65,54 @@ class MyBot(commands.Bot):
             self.scheduler.start()
 
     def update_schedule(self):
-        """スケジュールを更新する（時間変更時に呼び出す）"""
         self.scheduler.remove_all_jobs()
-
-        data = load_data()
-        time_str = data["time"]
+        time_str = load_time()
         hour, minute = map(int, time_str.split(":"))
-
         self.scheduler.add_job(
             self.send_random_message, "cron", hour=hour, minute=minute
         )
-        print(f"スケジュールを {time_str} に設定しました。")
 
     async def send_random_message(self):
-        """指定時間にランダムメッセージを送信"""
         channel = self.get_channel(CHANNEL_ID)
         if not channel:
-            print("エラー: チャンネルが見つかりません。")
             return
-
-        data = load_data()
-        messages = data.get("messages", [])
-
+        messages = load_messages()
         if messages:
             chosen = random.choice(messages)
-            await channel.send(chosen)
+            await channel.send(chosen["message_text"])
         else:
             await channel.send("【警告】送信するメッセージが登録されていません。")
-
 
 bot = MyBot()
 
 @bot.tree.command(name="list", description="登録されているメッセージと送信時間の一覧を表示します")
 async def list_messages(interaction: discord.Interaction):
-    data = load_data()
-    msg_list = "\n".join(
-        [f"{i+1}: {m}" for i, m in enumerate(data["messages"])]
-    )
-
+    current_time = load_time()
+    messages = load_messages()
+    msg_list = "\n".join([f"ID {m['id']}: {m['message_text']}" for m in messages])
+    
     embed = discord.Embed(title="Bot設定状況", color=discord.Color.blue())
-    embed.add_field(name="現在の送信時間", value=data["time"], inline=False)
-    embed.add_field(
-        name="登録メッセージ一覧",
-        value=msg_list if msg_list else "登録なし",
-        inline=False,
-    )
-
+    embed.add_field(name="現在の送信時間", value=current_time, inline=False)
+    embed.add_field(name="登録メッセージ一覧", value=msg_list if msg_list else "登録なし", inline=False)
     await interaction.response.send_message(embed=embed)
-
 
 @bot.tree.command(name="add", description="メッセージを新しく登録します")
 @app_commands.describe(text="追加したいメッセージ")
 async def add_message(interaction: discord.Interaction, text: str):
-    data = load_data()
-    data["messages"].append(text)
-    save_data(data)
-    await interaction.response.send_message(
-        f"追加しました: `{text}`", ephemeral=True
-    )
+    add_message_to_db(text)
+    await interaction.response.send_message(f"追加しました: `{text}`", ephemeral=True)
 
-
-@bot.tree.command(name="delete", description="指定した番号のメッセージを削除します")
-@app_commands.describe(number="削除したいメッセージの番号（/listで確認してください）")
+@bot.tree.command(name="delete", description="指定したIDのメッセージを削除します")
+@app_commands.describe(number="削除したいメッセージのID（/listで確認してください）")
 async def delete_message(interaction: discord.Interaction, number: int):
-    data = load_data()
-    messages = data["messages"]
-
-    if 1 <= number <= len(messages):
-        removed = messages.pop(number - 1)
-        save_data(data)
-        await interaction.response.send_message(
-            f"削除しました: `{removed}`", ephemeral=True
-        )
+    messages = load_messages()
+    valid_ids = [m["id"] for m in messages]
+    
+    if number in valid_ids:
+        delete_message_from_db(number)
+        await interaction.response.send_message(f"ID {number} のメッセージを削除しました。", ephemeral=True)
     else:
-        await interaction.response.send_message(
-            "無効な番号です。/list で番号を確認してください。", ephemeral=True
-        )
-
+        await interaction.response.send_message("無効なIDです。/list で確認できるIDを指定してください。", ephemeral=True)
 
 @bot.tree.command(name="set_time", description="送信時間を変更します")
 @app_commands.describe(time="送信時間（例: 08:30, 21:00）")
@@ -130,22 +122,14 @@ async def set_time(interaction: discord.Interaction, time: str):
         if not (0 <= hour <= 23 and 0 <= minute <= 59):
             raise ValueError
     except ValueError:
-        await interaction.response.send_message(
-            "時間の形式が正しくありません。`HH:MM` (例 08:00 や 23:15) で入力してください。",
-            ephemeral=True,
-        )
+        await interaction.response.send_message("時間の形式が正しくありません。`HH:MM` で入力してください。", ephemeral=True)
         return
 
-    data = load_data()
-    data["time"] = f"{hour:02d}:{minute:02d}"
-    save_data(data)
-
+    formatted_time = f"{hour:02d}:{minute:02d}"
+    save_time(formatted_time)
     bot.update_schedule()
-
-    await interaction.response.send_message(
-        f"送信時間を `{data['time']}` に変更しました。", ephemeral=True
-    )
-
+    await interaction.response.send_message(f"送信時間を `{formatted_time}` に変更しました。", ephemeral=True)
 
 if __name__ == "__main__":
+    threading.Thread(target=run_web_server, daemon=True).start()
     bot.run(TOKEN)
