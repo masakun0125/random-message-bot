@@ -11,8 +11,8 @@
 4. 同じ「Bot」画面を少し下にスクロールして「MESSAGE CONTENT INTENT」をON(青色の状態)にして保存する。
 5. 「インストール」を押して「インストールリンク」というところのリンクをコピーする。(コピーボタンはリンクの右にあります)
 6. 左メニューの 「OAuth2」 ＞ 「URL Generator」 を押す。
-6-1. 「SCOPES(スコープって書いてあるかも)」の欄にある`bot`と`applications.commands`にチェックを入れる。
-6-2. 「BOT PERMISSIONS(Botの権限って書いてあるかも)」の欄にある`Send Messages`と`Embed Links`にチェックを入れる。
+- 6-1. 「SCOPES(スコープって書いてあるかも)」の欄にある`bot`と`applications.commands`にチェックを入れる。
+- 6-2. 「BOT PERMISSIONS(Botの権限って書いてあるかも)」の欄にある`Send Messages`と`Embed Links`にチェックを入れる。
 7. 一番下に生成された URLをコピーしてブラウザで開き、Botを自分のDiscordサーバーに招待する!
 
 ### 2章.Botの稼働
